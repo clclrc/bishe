@@ -3,6 +3,7 @@ import os
 import sys
 import argparse
 import logging
+import matplotlib.pyplot as plt
 
 import cv2
 
@@ -221,7 +222,7 @@ def run():
 
     # Load the network
     logging.info('Loading Network...')
-    input_channels = 1*args.use_depth + 3*args.use_rgb
+    input_channels = 1 * args.use_depth + 3 * args.use_rgb
     ggcnn = get_network(args.network)
 
     net = ggcnn(input_channels=input_channels)
@@ -238,35 +239,99 @@ def run():
     sys.stdout = sys.__stdout__
     f.close()
 
+    # 初始化训练指标存储
+    train_losses = []
+    val_losses = []
+    iou_scores = []
+    grasp_success_rates = []
+    angle_errors = []
+    width_errors = []
+    grasp_confidences = []
+
     best_iou = 0.0
     for epoch in range(args.epochs):
         logging.info('Beginning Epoch {:02d}'.format(epoch))
+        
+        # 运行训练
         train_results = train(epoch, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
+        train_losses.append(train_results['loss'])  # 记录训练损失
+
+        # 运行验证
+        logging.info('Validating...')
+        test_results = validate(net, device, val_data, args.val_batches)
+
+        # 记录验证指标
+        val_losses.append(test_results['loss'])
+        iou_scores.append(test_results['correct'] / (test_results['correct'] + test_results['failed']))
+        grasp_success_rates.append(test_results['correct'] / (test_results['correct'] + test_results['failed']))
+        angle_errors.append(test_results.get('angle_error', 0))  # 可能需要修改 validate() 以返回 angle_error
+        width_errors.append(test_results.get('width_error', 0))  # 可能需要修改 validate() 以返回 width_error
+        grasp_confidences.append(test_results.get('confidence', 0))  # 可能需要 validate() 返回 confidence
 
         # Log training losses to tensorboard
         tb.add_scalar('loss/train_loss', train_results['loss'], epoch)
         for n, l in train_results['losses'].items():
             tb.add_scalar('train_loss/' + n, l, epoch)
 
-        # Run Validation
-        logging.info('Validating...')
-        test_results = validate(net, device, val_data, args.val_batches)
-        logging.info('%d/%d = %f' % (test_results['correct'], test_results['correct'] + test_results['failed'],
-                                     test_results['correct']/(test_results['correct']+test_results['failed'])))
+        # Log validation results to tensorboard
+        tb.add_scalar('loss/IOU', iou_scores[-1], epoch)
+        tb.add_scalar('loss/val_loss', val_losses[-1], epoch)
 
-        # Log validation results to tensorbaord
-        tb.add_scalar('loss/IOU', test_results['correct'] / (test_results['correct'] + test_results['failed']), epoch)
-        tb.add_scalar('loss/val_loss', test_results['loss'], epoch)
-        for n, l in test_results['losses'].items():
-            tb.add_scalar('val_loss/' + n, l, epoch)
+        # 保存最佳模型
+        if iou_scores[-1] > best_iou or epoch == 0 or (epoch % 10) == 0:
+            torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f' % (epoch, iou_scores[-1])))
+            torch.save(net.state_dict(), os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_statedict.pt' % (epoch, iou_scores[-1])))
+            best_iou = iou_scores[-1]
 
-        # Save best performing network
-        iou = test_results['correct'] / (test_results['correct'] + test_results['failed'])
-        if iou > best_iou or epoch == 0 or (epoch % 10) == 0:
-            torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f' % (epoch, iou)))
-            torch.save(net.state_dict(), os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_statedict.pt' % (epoch, iou)))
-            best_iou = iou
+    # 训练结束后绘制曲线
+    plt.figure(figsize=(12, 6))
 
+    plt.subplot(2, 3, 1)
+    plt.plot(train_losses, label="Train Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.title("Loss Curve")
+
+    plt.subplot(2, 3, 2)
+    plt.plot(iou_scores, label="IOU Score")
+    plt.xlabel("Epochs")
+    plt.ylabel("IOU")
+    plt.legend()
+    plt.title("IOU Curve")
+
+    plt.subplot(2, 3, 3)
+    plt.plot(grasp_success_rates, label="Grasp Success Rate")
+    plt.xlabel("Epochs")
+    plt.ylabel("Success Rate")
+    plt.legend()
+    plt.title("Grasp Success Rate")
+
+    plt.subplot(2, 3, 4)
+    plt.plot(angle_errors, label="Angle Error")
+    plt.xlabel("Epochs")
+    plt.ylabel("Error (radians)")
+    plt.legend()
+    plt.title("Angle Error")
+
+    plt.subplot(2, 3, 5)
+    plt.plot(width_errors, label="Width Error")
+    plt.xlabel("Epochs")
+    plt.ylabel("Error")
+    plt.legend()
+    plt.title("Width Error")
+
+    plt.subplot(2, 3, 6)
+    plt.plot(grasp_confidences, label="Grasp Confidence")
+    plt.xlabel("Epochs")
+    plt.ylabel("Confidence")
+    plt.legend()
+    plt.title("Grasp Confidence")
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_folder, "training_results.png"))  # 保存训练曲线
+    plt.show()
 
 if __name__ == '__main__':
     run()
