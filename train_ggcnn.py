@@ -330,10 +330,6 @@ def run():
     plt.title("Grasp Confidence")
 
     plt.tight_layout()
-    save_folder = "output/training_results"
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-
     plt.savefig(os.path.join(save_folder, "training_results.png"))  # 保存训练曲线
     plt.show()
 
