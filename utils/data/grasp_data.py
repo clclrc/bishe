@@ -5,25 +5,45 @@ import torch.utils.data
 
 import random
 
-def simulate_occlusion(img, occlusion_prob=1.0):
+def simulate_occlusion(
+    img, 
+    occlusion_prob=1, 
+    min_ratio=0.15, 
+    max_ratio=0.25, 
+    min_num=2, 
+    max_num=3
+):
     """
-    随机在图像上添加一个遮挡块(黑色矩形).
-    :param img: np.ndarray, (H, W)或(H, W, C)
-    :param occlusion_prob: 遮挡概率(这里写1.0表示一定会遮挡一次,也可写随机判断)
-    :return: 被遮挡后的图像
+    在图像上随机添加多个较小的遮挡块（黑色矩形）。
+    :param img: numpy.ndarray, (H, W) 或 (H, W, C)，灰度或彩色图像
+    :param occlusion_prob: 添加遮挡的概率，如果没达到这个概率则不添加任何遮挡
+    :param min_ratio: 单个遮挡块相对于图像宽/高的最小比例
+    :param max_ratio: 单个遮挡块相对于图像宽/高的最大比例
+    :param min_num: 最少添加多少个遮挡块
+    :param max_num: 最多添加多少个遮挡块
+    :return: 添加遮挡后的图像
     """
     if np.random.rand() < occlusion_prob:
         h, w = img.shape[:2]
-        # 随机生成遮挡区域
-        x1 = np.random.randint(0, w // 2)
-        y1 = np.random.randint(0, h // 2)
-        x2 = np.random.randint(w // 2, w)
-        y2 = np.random.randint(h // 2, h)
-        # 用 0 覆盖(若是RGB, 可能需要 img[y1:y2, x1:x2, :] = 0)
-        if len(img.shape) == 2:
-            img[y1:y2, x1:x2] = 0
-        else:
-            img[y1:y2, x1:x2, :] = 0
+        # 在 [min_num, max_num] 范围内随机选多少个遮挡块
+        num_occ = np.random.randint(min_num, max_num + 1)
+
+        for _ in range(num_occ):
+            # 随机生成遮挡块的宽度和高度
+            occ_w = np.random.randint(int(w * min_ratio), int(w * max_ratio) + 1)
+            occ_h = np.random.randint(int(h * min_ratio), int(h * max_ratio) + 1)
+
+            # 随机选择遮挡块在图像中的位置
+            x1 = np.random.randint(0, w - occ_w + 1)
+            y1 = np.random.randint(0, h - occ_h + 1)
+            x2 = x1 + occ_w
+            y2 = y1 + occ_h
+
+            # 将区域置为 0（黑色），适用于灰度或彩色图像
+            if len(img.shape) == 2:  # 灰度图
+                img[y1:y2, x1:x2] = 0
+            else:  # 彩色图
+                img[y1:y2, x1:x2, :] = 0
     return img
 
 class GraspDatasetBase(torch.utils.data.Dataset):
