@@ -5,6 +5,26 @@ import torch.utils.data
 
 import random
 
+def simulate_occlusion(img, occlusion_prob=1.0):
+    """
+    随机在图像上添加一个遮挡块(黑色矩形).
+    :param img: np.ndarray, (H, W)或(H, W, C)
+    :param occlusion_prob: 遮挡概率(这里写1.0表示一定会遮挡一次,也可写随机判断)
+    :return: 被遮挡后的图像
+    """
+    if np.random.rand() < occlusion_prob:
+        h, w = img.shape[:2]
+        # 随机生成遮挡区域
+        x1 = np.random.randint(0, w // 2)
+        y1 = np.random.randint(0, h // 2)
+        x2 = np.random.randint(w // 2, w)
+        y2 = np.random.randint(h // 2, h)
+        # 用 0 覆盖(若是RGB, 可能需要 img[y1:y2, x1:x2, :] = 0)
+        if len(img.shape) == 2:
+            img[y1:y2, x1:x2] = 0
+        else:
+            img[y1:y2, x1:x2, :] = 0
+    return img
 
 class GraspDatasetBase(torch.utils.data.Dataset):
     """
@@ -67,6 +87,11 @@ class GraspDatasetBase(torch.utils.data.Dataset):
         # Load the RGB image
         if self.include_rgb:
             rgb_img = self.get_rgb(idx, rot, zoom_factor)
+
+        if np.random.rand() < 0.5:  # 50%概率遮挡
+            depth_img = simulate_occlusion(depth_img)
+            if self.include_rgb:
+                rgb_img = simulate_occlusion(rgb_img)
 
         # Load the grasps
         bbs = self.get_gtbb(idx, rot, zoom_factor)
