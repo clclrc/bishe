@@ -5,7 +5,7 @@ import torch.utils.data
 
 import random
 
-def simulate_occlusion(img, min_ratio=0.15, max_ratio=0.25):
+def simulate_occlusion(img, min_ratio=0.05, max_ratio=0.15):
     """
     在图像上添加固定数量（3个）的遮挡块（黑色矩形）。
 
